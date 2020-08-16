@@ -290,6 +290,8 @@ func (ors *ocpRouteSource) targetsFromOcpRouteStatus(status routeapi.RouteStatus
 				log.Warn(err)
 			}
 			targets = append(targets, target...)
+		} else if ing.RouterCanonicalHostname != "" {
+			targets = append(targets, ing.RouterCanonicalHostname)
 		}
 	}
 	return targets
