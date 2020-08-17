@@ -31,6 +31,7 @@ import (
 	routeInformer "github.com/openshift/client-go/route/informers/externalversions/route/v1"
 	log "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -42,6 +43,13 @@ import (
 
 const (
 	ingressControllerOwnerLabel = "ingresscontroller.operator.openshift.io/owning-ingresscontroller"
+	ocpMajorVersion3            = 3
+	ocpMajorVersion4            = 4
+)
+
+var (
+	// Openshift Container Platform Major version for openshift cluster
+	ocpMajorVersion int
 )
 
 // ocpRouteSource is an implementation of Source for OpenShift Route objects.
@@ -105,6 +113,8 @@ func NewOcpRouteSource(
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync cache: %v", err)
 	}
+
+	ocpMajorVersion = getOCPMajorVersion(kubeClient)
 
 	return &ocpRouteSource{
 		ocpClient:                ocpClient,
@@ -283,14 +293,15 @@ func (ors *ocpRouteSource) targetsFromOcpRouteStatus(status routeapi.RouteStatus
 	var targets endpoint.Targets
 
 	for _, ing := range status.Ingress {
-		if ing.RouterName != "" {
+		if ing.RouterName != "" && ocpMajorVersion == ocpMajorVersion4 {
 			// Extract load balancer IPs/Hostnames for the route
 			target, err := ors.getRouterLoadBalancerTargets(ing.RouterName)
 			if err != nil {
 				log.Warn(err)
 			}
 			targets = append(targets, target...)
-		} else if ing.RouterCanonicalHostname != "" {
+		} else if ing.RouterCanonicalHostname != "" && ocpMajorVersion == ocpMajorVersion3 {
+			// Append RouterCanonicalHostname in case it's OCP v3
 			targets = append(targets, ing.RouterCanonicalHostname)
 		}
 	}
@@ -327,4 +338,24 @@ func (ors *ocpRouteSource) getRouterLoadBalancerTargets(routerName string) (endp
 		}
 	}
 	return targets, err
+}
+
+// Returns Openshift Container Platform Major Version
+func getOCPMajorVersion(kubeClient kubernetes.Interface) int {
+	// Since, IngressController was introduced in OCP v4.x we can verify if the current cluster is on OCP v4.x by
+	// ensuring that resource exists against Group(operator.openshift.io), Version(v1) and Kind(IngressController)
+	// In case it doesn't exist we assume that it's runing on OCP v3.x
+	resources, err := kubeClient.Discovery().ServerResourcesForGroupVersion("operator.openshift.io/v1")
+	if err != nil && errors.IsNotFound(err) {
+		return ocpMajorVersion3
+	} else if err != nil {
+		return ocpMajorVersion3
+	}
+
+	for _, apiResource := range resources.APIResources {
+		if apiResource.Kind == "IngressController" {
+			return ocpMajorVersion4
+		}
+	}
+	return ocpMajorVersion3
 }
