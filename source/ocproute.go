@@ -344,7 +344,7 @@ func (ors *ocpRouteSource) getRouterLoadBalancerTargets(routerName string) (endp
 func getOCPMajorVersion(kubeClient kubernetes.Interface) int {
 	// Since, IngressController was introduced in OCP v4.x we can verify if the current cluster is on OCP v4.x by
 	// ensuring that resource exists against Group(operator.openshift.io), Version(v1) and Kind(IngressController)
-	// In case it doesn't exist we assume that it's runing on OCP v3.x
+	// In case it doesn't exist we assume that it's running on OCP v3.x
 	resources, err := kubeClient.Discovery().ServerResourcesForGroupVersion("operator.openshift.io/v1")
 	if err != nil && errors.IsNotFound(err) {
 		return ocpMajorVersion3
