@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"regexp"
 
 	log "github.com/sirupsen/logrus"
 
