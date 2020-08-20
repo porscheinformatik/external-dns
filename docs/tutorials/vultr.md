@@ -68,7 +68,7 @@ rules:
 - apiGroups: [""]
   resources: ["services","endpoints","pods"]
   verbs: ["get","watch","list"]
-- apiGroups: ["extensions"]
+- apiGroups: ["extensions","networking.k8s.io"]
   resources: ["ingresses"]
   verbs: ["get","watch","list"]
 - apiGroups: [""]
@@ -116,7 +116,7 @@ spec:
           value: "YOU_VULTR_API_KEY"
 ```
 
-## Deploying an Nginx Service
+## Deploying a Nginx Service
 
 Create a service file called 'nginx.yaml' with the following contents:
 

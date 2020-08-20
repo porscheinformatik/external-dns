@@ -192,6 +192,11 @@ func (im *TXTRegistry) ApplyChanges(ctx context.Context, changes *plan.Changes) 
 	return im.provider.ApplyChanges(ctx, filteredChanges)
 }
 
+// PropertyValuesEqual compares two attribute values for equality
+func (im *TXTRegistry) PropertyValuesEqual(name string, previous string, current string) bool {
+	return im.provider.PropertyValuesEqual(name, previous, current)
+}
+
 /**
   TXT registry specific private methods
 */
@@ -217,18 +222,6 @@ func newaffixNameMapper(prefix string, suffix string) affixNameMapper {
 	return affixNameMapper{prefix: strings.ToLower(prefix), suffix: strings.ToLower(suffix)}
 }
 
-/* func (pr affixNameMapper) toEndpointName(txtDNSName string) string {
-	lowerDNSName := strings.ToLower(txtDNSName)
-	regex := regexp.MustCompile(`\.`)
-    DNSName := regex.Split(lowerDNSName, 2)
-	if (strings.HasPrefix(DNSName[0], pr.prefix) && strings.HasSuffix(DNSName[0], pr.suffix)) {
-		DNSName[0] = strings.TrimPrefix(DNSName[0], pr.prefix)
-		DNSName[0] = strings.TrimSuffix(DNSName[0], pr.suffix)
-		return DNSName[0] + "." + DNSName[1]
-	}
-	return ""
-}*/
-
 func (pr affixNameMapper) toEndpointName(txtDNSName string) string {
 	lowerDNSName := strings.ToLower(txtDNSName)
 	if strings.HasPrefix(lowerDNSName, pr.prefix) && len(pr.suffix) == 0 {
@@ -236,19 +229,16 @@ func (pr affixNameMapper) toEndpointName(txtDNSName string) string {
 	}
 
 	if len(pr.suffix) > 0 {
-		regex := regexp.MustCompile(`\.`)
-		DNSName := regex.Split(lowerDNSName, 2)
+		DNSName := strings.SplitN(lowerDNSName, ".", 2)
 		if strings.HasSuffix(DNSName[0], pr.suffix) {
 			return strings.TrimSuffix(DNSName[0], pr.suffix) + "." + DNSName[1]
-		}	
+		}
 	}
 	return ""
 }
 
-
 func (pr affixNameMapper) toTXTName(endpointDNSName string) string {
-	regex := regexp.MustCompile(`\.`)
-    DNSName := regex.Split(endpointDNSName, 2)
+	DNSName := strings.SplitN(endpointDNSName, ".", 2)
 	return pr.prefix + DNSName[0] + pr.suffix + "." + DNSName[1]
 }
 

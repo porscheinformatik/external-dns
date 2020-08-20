@@ -52,8 +52,7 @@ const (
 )
 
 var (
-	// see: https://docs.aws.amazon.com/general/latest/gr/rande.html#elb_region
-	// and: https://docs.aws.amazon.com/govcloud-us/latest/UserGuide/using-govcloud-endpoints.html
+	// see: https://docs.aws.amazon.com/general/latest/gr/elb.html
 	canonicalHostedZones = map[string]string{
 		// Application Load Balancers and Classic Load Balancers
 		"us-east-2.elb.amazonaws.com":         "Z3AADJGX6KTTL2",
@@ -74,9 +73,10 @@ var (
 		"eu-west-3.elb.amazonaws.com":         "Z3Q77PNBQS71R4",
 		"eu-north-1.elb.amazonaws.com":        "Z23TAZ6LKFMNIO",
 		"sa-east-1.elb.amazonaws.com":         "Z2P70J7HTTTPLU",
-		"cn-north-1.elb.amazonaws.com.cn":     "Z3BX2TMKNYI13Y",
-		"cn-northwest-1.elb.amazonaws.com.cn": "Z3BX2TMKNYI13Y",
-		"us-gov-west-1.amazonaws.com":         "Z1K6XKP9SAGWDV",
+		"cn-north-1.elb.amazonaws.com.cn":     "Z1GDH35T77C1KE",
+		"cn-northwest-1.elb.amazonaws.com.cn": "ZM7IZAIOVVDZF",
+		"us-gov-west-1.elb.amazonaws.com":     "Z33AYJ8TM3BH4J",
+		"us-gov-east-1.elb.amazonaws.com":     "Z166TLBEWOO7G0",
 		"me-south-1.elb.amazonaws.com":        "ZS929ML54UICD",
 		// Network Load Balancers
 		"elb.us-east-2.amazonaws.com":         "ZLMOA37VPKANP",
@@ -98,7 +98,11 @@ var (
 		"elb.sa-east-1.amazonaws.com":         "ZTK26PT1VY4CU",
 		"elb.cn-north-1.amazonaws.com.cn":     "Z3QFB96KMJ7ED6",
 		"elb.cn-northwest-1.amazonaws.com.cn": "ZQEIKTCZ8352D",
+		"elb.us-gov-west-1.amazonaws.com":     "ZMG1MZ2THAWF1",
+		"elb.us-gov-east-1.amazonaws.com":     "Z1ZSMQQ6Q24QQ8",
 		"elb.me-south-1.amazonaws.com":        "Z3QSRYVP46NYYV",
+		// Global Accelerator
+		"awsglobalaccelerator.com": "Z2BJ6XQ5FK7U4H",
 	}
 )
 
@@ -114,6 +118,7 @@ type Route53API interface {
 
 // AWSProvider is an implementation of Provider for AWS Route53.
 type AWSProvider struct {
+	provider.BaseProvider
 	client               Route53API
 	dryRun               bool
 	batchChangeSize      int
@@ -163,7 +168,7 @@ func NewAWSProvider(awsConfig AWSConfig) (*AWSProvider, error) {
 		SharedConfigState: session.SharedConfigEnable,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to instantiate AWS session: %w", err)
 	}
 
 	if awsConfig.AssumeRole != "" {
@@ -226,10 +231,10 @@ func (p *AWSProvider) Zones(ctx context.Context) (map[string]*route53.HostedZone
 
 	err := p.client.ListHostedZonesPagesWithContext(ctx, &route53.ListHostedZonesInput{}, f)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list hosted zones: %w", err)
 	}
 	if tagErr != nil {
-		return nil, tagErr
+		return nil, fmt.Errorf("failed to list zones tags: %w", tagErr)
 	}
 
 	for _, zone := range zones {
@@ -252,7 +257,7 @@ func wildcardUnescape(s string) string {
 func (p *AWSProvider) Records(ctx context.Context) (endpoints []*endpoint.Endpoint, _ error) {
 	zones, err := p.Zones(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("records retrieval failed: %w", err)
 	}
 
 	return p.records(ctx, zones)
@@ -336,7 +341,7 @@ func (p *AWSProvider) records(ctx context.Context, zones map[string]*route53.Hos
 		}
 
 		if err := p.client.ListResourceRecordSetsPagesWithContext(ctx, params, f); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to list resource records sets for zone %s: %w", *z.Id, err)
 		}
 	}
 
@@ -361,12 +366,12 @@ func (p *AWSProvider) DeleteRecords(ctx context.Context, endpoints []*endpoint.E
 func (p *AWSProvider) doRecords(ctx context.Context, action string, endpoints []*endpoint.Endpoint) error {
 	zones, err := p.Zones(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list zones, aborting %s doRecords action: %w", action, err)
 	}
 
 	records, err := p.records(ctx, zones)
 	if err != nil {
-		log.Errorf("getting records failed: %v", err)
+		log.Errorf("failed to list records while preparing %s doRecords action: %s", action, err)
 	}
 	return p.submitChanges(ctx, p.newChanges(action, endpoints, records, zones), zones)
 }
@@ -375,7 +380,7 @@ func (p *AWSProvider) doRecords(ctx context.Context, action string, endpoints []
 func (p *AWSProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
 	zones, err := p.Zones(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list zones, not applying changes: %w", err)
 	}
 
 	records, ok := ctx.Value(provider.RecordsContextKey).([]*endpoint.Endpoint)
@@ -383,7 +388,7 @@ func (p *AWSProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) e
 		var err error
 		records, err = p.records(ctx, zones)
 		if err != nil {
-			log.Errorf("getting records failed: %v", err)
+			log.Errorf("failed to get records while preparing to applying changes: %s", err)
 		}
 	}
 
@@ -450,7 +455,7 @@ func (p *AWSProvider) submitChanges(ctx context.Context, changes []*route53.Chan
 	}
 
 	if len(failedZones) > 0 {
-		return fmt.Errorf("Failed to submit all changes for the following zones: %v", failedZones)
+		return fmt.Errorf("failed to submit all changes for the following zones: %v", failedZones)
 	}
 
 	return nil
@@ -578,7 +583,7 @@ func (p *AWSProvider) tagsForZone(ctx context.Context, zoneID string) (map[strin
 		ResourceId:   aws.String(zoneID),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list tags for zone %s: %w", zoneID, err)
 	}
 	tagMap := map[string]string{}
 	for _, tag := range response.ResourceTagSet.Tags {
@@ -589,7 +594,8 @@ func (p *AWSProvider) tagsForZone(ctx context.Context, zoneID string) (map[strin
 
 func batchChangeSet(cs []*route53.Change, batchSize int) [][]*route53.Change {
 	if len(cs) <= batchSize {
-		return [][]*route53.Change{cs}
+		res := sortChangesByActionNameType(cs)
+		return [][]*route53.Change{res}
 	}
 
 	batchChanges := make([][]*route53.Change, 0)
@@ -636,10 +642,10 @@ func batchChangeSet(cs []*route53.Change, batchSize int) [][]*route53.Change {
 
 func sortChangesByActionNameType(cs []*route53.Change) []*route53.Change {
 	sort.SliceStable(cs, func(i, j int) bool {
-		if *cs[i].Action < *cs[j].Action {
+		if *cs[i].Action > *cs[j].Action {
 			return true
 		}
-		if *cs[i].Action > *cs[j].Action {
+		if *cs[i].Action < *cs[j].Action {
 			return false
 		}
 		if *cs[i].ResourceRecordSet.Name < *cs[j].ResourceRecordSet.Name {
@@ -734,7 +740,6 @@ func isAWSAlias(ep *endpoint.Endpoint, addrs []*endpoint.Endpoint) string {
 				if hostedZone := canonicalHostedZone(addr.Targets[0]); hostedZone != "" {
 					return hostedZone
 				}
-
 			}
 		}
 	}
