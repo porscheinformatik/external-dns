@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -254,8 +253,7 @@ func (p *InfobloxProvider) zones() ([]ibclient.ZoneAuth, error) {
 		}
 
 		// Skip Reversemapping-zones as long as creation of PTR records is not supported
-		matchReverse, _ := regexp.MatchString("(/[0-9]+|.arpa)$", zone.Fqdn)
-		if matchReverse {
+		if strings.HasSuffix(zone.Fqdn, ".arpa") {
 			continue
 		}
 
