@@ -9,9 +9,8 @@ on:
     - master
 
 jobs:
-
   build:
-
+    if: contains(github.event.pull_request.labels.*.name, 'build-image')
     runs-on: ubuntu-latest
 
     steps:
