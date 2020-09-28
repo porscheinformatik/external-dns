@@ -10,6 +10,7 @@ on:
 
 jobs:
   build:
+    name: porscheinformatik-build
     if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'build-image')
     runs-on: ubuntu-latest
 
